@@ -1,0 +1,13 @@
+# User-facing routes covered by scripts/test-navigation-shell.mjs.
+# Include Next.js app-path manifest variants so generated .next route files
+# can be matched without treating build artifacts as uncovered routes.
+/
+/page
+/runs
+/runs/page
+/issues
+/issues/page
+/pull-requests
+/pull-requests/page
+/errors
+/errors/page
