@@ -32,6 +32,9 @@ const modulePath = join(tempDir, "telemetry-explorer.mjs");
 writeFileSync(modulePath, compiled);
 
 const explorerModule = await import(pathToFileURL(modulePath).href);
+const originalDateNow = Date.now;
+Date.now = () => Date.parse("2026-07-11T12:00:00Z");
+
 assert.equal(typeof explorerModule.default, "function", "telemetry explorer must default-export a component");
 assert.equal(typeof explorerModule.filterTelemetryEvents, "function", "filterTelemetryEvents must be exported for deterministic unit coverage");
 assert.equal(typeof explorerModule.summarizeVisibleEvents, "function", "summarizeVisibleEvents must be exported for deterministic unit coverage");
@@ -82,3 +85,5 @@ assert.doesNotMatch(html, /<form\b|method="post"|DATABASE_URL|postgres:\/\//i, "
 
 const overviewSource = readFileSync(overviewPath, "utf8");
 assert.match(overviewSource, /TelemetryExplorer/, "overview must embed the interactive telemetry explorer");
+
+Date.now = originalDateNow;
