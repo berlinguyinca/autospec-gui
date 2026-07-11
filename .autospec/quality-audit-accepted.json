@@ -1,0 +1,20 @@
+{
+  "accepted_debt": [
+    "large-files:.next/server/chunks/ssr/[root-of-the-server]__0100oqz._.js.map",
+    "large-files:.next/server/chunks/ssr/node_modules_next_dist_1vgd_ru._.js.map",
+    "route-coverage:/_global-error",
+    "route-coverage:/_global-error/page",
+    "route-coverage:/_not-found",
+    "route-coverage:/_not-found/page",
+    "route-coverage:/dashboard"
+  ],
+  "notes": {
+    "large-files:.next/server/chunks/ssr/[root-of-the-server]__0100oqz._.js.map": "Next.js generated build sourcemap under gitignored .next; not a repository source file.",
+    "large-files:.next/server/chunks/ssr/node_modules_next_dist_1vgd_ru._.js.map": "Next.js generated dependency sourcemap under gitignored .next; not a repository source file.",
+    "route-coverage:/_global-error": "Next.js emits this generated internal route in .next/routes-manifest.json; it is not a user-facing dashboard route.",
+    "route-coverage:/_global-error/page": "Next.js emits this generated internal route in .next/app-path-routes-manifest.json; it is not a user-facing dashboard route.",
+    "route-coverage:/_not-found": "Next.js emits this generated internal route in .next diagnostics/manifests; it is not a user-facing dashboard route.",
+    "route-coverage:/_not-found/page": "Next.js emits this generated internal route in .next/app-path-routes-manifest.json; it is not a user-facing dashboard route.",
+    "route-coverage:/dashboard": "Generated .next/types/routes.d.ts can retain stale route typings from previous builds; the current app has no app/dashboard route, so this is not user-facing coverage debt."
+  }
+}

@@ -16,3 +16,7 @@ pnpm-debug.log*
 .tmp-test-overview/
 .tmp-test-navigation-shell/
 .tmp-test-telemetry-filters/
+
+.autospec/*
+!.autospec/
+!.autospec/quality-audit-accepted.json
