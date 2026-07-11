@@ -32,7 +32,7 @@ const { getAutospecServerConfig, parseAutospecServerConfig } = mod.exports;
 assert.equal(typeof parseAutospecServerConfig, "function", "parseAutospecServerConfig must be exported for unit testing");
 assert.equal(typeof getAutospecServerConfig, "function", "getAutospecServerConfig must be exported for app server modules");
 
-const validUrl = "postgres://autospec:secret@localhost:5432/autospec";
+const validUrl = "postgres://autospec:redacted@localhost:5432/autospec";
 assert.deepEqual(parseAutospecServerConfig({ AUTOSPEC_TELEMETRY_DATABASE_URL: validUrl }), {
   telemetryDatabaseUrl: validUrl,
   telemetrySchema: "public",
@@ -41,7 +41,7 @@ assert.deepEqual(parseAutospecServerConfig({ AUTOSPEC_TELEMETRY_DATABASE_URL: va
 
 assert.equal(
   parseAutospecServerConfig({
-    AUTOSPEC_TELEMETRY_DATABASE_URL: "postgresql://autospec:secret@localhost/autospec",
+    AUTOSPEC_TELEMETRY_DATABASE_URL: "postgresql://autospec:redacted@localhost/autospec",
     AUTOSPEC_TELEMETRY_SCHEMA: "telemetry",
     AUTOSPEC_GUI_READ_ONLY: "1"
   }).telemetrySchema,
