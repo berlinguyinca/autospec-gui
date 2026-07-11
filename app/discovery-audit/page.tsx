@@ -107,7 +107,7 @@ function IssueLinks({ issueNumbers }: { issueNumbers: number[] }) {
     <ul className="inline-link-list" aria-label="Created issues">
       {issueNumbers.map((issueNumber) => (
         <li key={issueNumber}>
-          <a href={`/issues/${issueNumber}`}>#{issueNumber}</a>
+          <a href={`/issues?issue=${issueNumber}`}>#{issueNumber}</a>
         </li>
       ))}
     </ul>

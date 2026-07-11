@@ -244,8 +244,8 @@ export async function listDiscoveryAuditCycles(
   const rows = await client.query<DiscoveryAuditCycleRow>(
     `select ${textExpr(id, "unknown")} as id,
             ${nullableTextExpr(sourceType)} as "sourceType",
-            ${numberExpr(candidateCount)} as "candidateCount",
-            ${numberExpr(filedCount)} as "filedCount",
+            ${nullableTextExpr(candidateCount)} as "candidateCount",
+            ${nullableTextExpr(filedCount)} as "filedCount",
             ${nullableTextExpr(dryReason)} as "dryReason",
             ${nullableTextExpr(safetyResult)} as "safetyResult",
             ${nullableTextExpr(createdIssues)} as "createdIssues",
@@ -264,11 +264,11 @@ function shapeDiscoveryAuditCycle(row: DiscoveryAuditCycleRow): DiscoveryAuditCy
   return {
     id: row.id ?? "unknown",
     sourceType: emptyToNull(row.sourceType),
-    candidateCount: coerceNumber(row.candidateCount),
-    filedCount: coerceNumber(row.filedCount),
+    candidateCount: coerceOptionalCount(row.candidateCount),
+    filedCount: coerceOptionalCount(row.filedCount),
     dryReason: emptyToNull(row.dryReason),
     safetyResult: emptyToNull(row.safetyResult),
-    createdIssueNumbers: parseIssueNumbers(row.createdIssues),
+    createdIssueNumbers: parseDiscoveryAuditIssueNumbers(row.createdIssues),
     observedAt: coerceDate(row.observedAt)
   };
 }
@@ -814,17 +814,10 @@ function emptyToNull(value: string | null): string | null {
   return trimmed ? trimmed : null;
 }
 
-function parseIssueNumbers(value: string | number | Array<string | number> | null): number[] {
-  if (Array.isArray(value)) {
-    return value.flatMap((item) => {
-      const parsed = parseIssueNumber(item);
-      return parsed === null ? [] : [parsed];
-    });
-  }
+export function parseDiscoveryAuditIssueNumbers(value: string | number | Array<string | number> | null): number[] {
+  if (Array.isArray(value)) return uniqueIssueNumbers(value.flatMap(issueNumberFromTrustedValue));
 
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? [value] : [];
-  }
+  if (typeof value === "number") return uniqueIssueNumbers(issueNumberFromTrustedValue(value));
 
   const trimmed = value?.trim();
   if (!trimmed) return [];
@@ -832,30 +825,66 @@ function parseIssueNumbers(value: string | number | Array<string | number> | nul
   try {
     const parsed = JSON.parse(trimmed) as unknown;
     if (Array.isArray(parsed)) {
-      return parsed.flatMap((item) => {
-        const issue = typeof item === "number" || typeof item === "string" ? parseIssueNumber(item) : null;
-        return issue === null ? [] : [issue];
-      });
+      return uniqueIssueNumbers(parsed.flatMap((item) => (typeof item === "number" || typeof item === "string") ? issueNumberFromTrustedValue(item) : []));
     }
   } catch {
-    // Fall through to extracting issue-looking tokens from text.
+    // Fall through to strict token parsing.
   }
 
-  return Array.from(trimmed.matchAll(/#?(\d+)/g))
-    .map((match) => Number(match[1]))
-    .filter((issue) => Number.isFinite(issue));
+  const tokens = trimmed.split(/[\s,]+/).filter(Boolean);
+  if (tokens.length === 0) return [];
+
+  const issueNumbers: number[] = [];
+  for (const token of tokens) {
+    const parsed = issueNumberFromTrustedToken(token);
+    if (parsed === null) return [];
+    issueNumbers.push(parsed);
+  }
+
+  return uniqueIssueNumbers(issueNumbers);
+}
+
+function issueNumberFromTrustedValue(value: string | number): number[] {
+  const parsed = parseIssueNumber(value);
+  return parsed === null ? [] : [parsed];
+}
+
+function issueNumberFromTrustedToken(token: string): number | null {
+  return parseIssueNumber(token) ?? parseIssueNumberFromIssueUrl(token);
+}
+
+function uniqueIssueNumbers(values: number[]): number[] {
+  return Array.from(new Set(values));
+}
+
+function coerceOptionalCount(value: string | number | null): number | null {
+  if (typeof value === "number") return Number.isSafeInteger(value) && value >= 0 ? value : null;
+
+  const trimmed = value?.trim();
+  if (!trimmed || !/^\d+$/.test(trimmed)) return null;
+
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
 function parseIssueNumber(value: string | number | null): number | null {
-  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "number") return Number.isSafeInteger(value) && value > 0 ? value : null;
   const trimmed = value?.trim();
   if (!trimmed) return null;
 
-  const match = trimmed.match(/^#?(\d+)$/) ?? trimmed.match(/\/issues\/(\d+)(?:\b|$)/);
+  const match = trimmed.match(/^#?(\d+)$/);
   if (!match) return null;
 
   const parsed = Number(match[1]);
-  return Number.isFinite(parsed) ? parsed : null;
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function parseIssueNumberFromIssueUrl(value: string): number | null {
+  const match = value.match(/^https?:\/\/[^\s]+\/issues\/(\d+)(?:[?#].*)?$/) ?? value.match(/^\/issues\/(\d+)(?:[?#].*)?$/);
+  if (!match) return null;
+
+  const parsed = Number(match[1]);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 function emptyIssueThroughput(): IssueThroughput {

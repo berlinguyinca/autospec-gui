@@ -9,7 +9,10 @@ import ts from "typescript";
 console.log("unit-only: discovery audit page tests mock server module results, not Postgres integration behavior");
 
 const pagePath = join(process.cwd(), "app", "discovery-audit", "page.tsx");
+const issuesPagePath = join(process.cwd(), "app", "issues", "page.tsx");
 assert.ok(existsSync(pagePath), "app/discovery-audit/page.tsx must exist");
+assert.ok(existsSync(issuesPagePath), "created issue links must target implemented /issues route");
+assert.ok(!existsSync(join(process.cwd(), "app", "issues", "[issueNumber]", "page.tsx")), "test fixture confirms /issues/[issueNumber] is not an implemented route");
 
 const pageSource = readFileSync(pagePath, "utf8");
 assert.doesNotMatch(pageSource, /^"use client";|^'use client';/m, "discovery audit page must remain a server component");
@@ -132,8 +135,9 @@ for (const expected of [
   assert.match(liveHtml, new RegExp(escapeRegExp(expected)), `live discovery audit should render ${expected}`);
 }
 assert.match(liveHtml, /Dry cycle/, "dry cycles must be explicitly explainable");
-assert.match(liveHtml, /<a\b[^>]*href="\/issues\/27"[^>]*>#27<\/a>/, "created issue identifiers must link to issue pages");
-assert.match(liveHtml, /<a\b[^>]*href="\/issues\/28"[^>]*>#28<\/a>/, "each created issue identifier must link to issue pages");
+assert.match(liveHtml, /<a\b[^>]*href="\/issues\?issue=27"[^>]*>#27<\/a>/, "created issue identifiers must link to the implemented /issues route with a URL-safe query");
+assert.match(liveHtml, /<a\b[^>]*href="\/issues\?issue=28"[^>]*>#28<\/a>/, "each created issue identifier must link to the implemented /issues route with a URL-safe query");
+assert.doesNotMatch(liveHtml, /href="\/issues\/27"|href="\/issues\/28"/, "created issue links must not point at missing dynamic issue routes");
 assert.doesNotMatch(liveHtml, /DATABASE_URL|postgres:\/\//i, "live state must not expose secrets");
 
 function escapeRegExp(value) {
