@@ -131,6 +131,30 @@ assert.match(queryLog[0], /null::timestamptz as "heartbeatAt"/, "updated_at must
 assert.doesNotMatch(queryLog[0], /"issue"::numeric/, "text issue candidates must not be cast to numeric in SQL");
 assert.match(queryLog[0], /"issue"::text as "issueNumber"/, "text issue candidates should be selected as text for safe parsing");
 
+const heartbeatAndUpdatedAtQueryLog = [];
+await telemetry.getLatestAutonomousRunStatus({
+  query: async (sql) => {
+    heartbeatAndUpdatedAtQueryLog.push(sql);
+    return { rows: [{
+      id: "run-latest-without-heartbeat",
+      repository: "repo",
+      branch: "branch",
+      status: "waiting",
+      heartbeatAt: null,
+      phase: null,
+      cycle: null,
+      issueNumber: "26",
+      observedAt: "2026-07-11T12:09:00Z"
+    }] };
+  }
+}, { schemaName: "public", tables: { autospec_runs: ["id", "repository", "branch", "status", "heartbeat_at", "updated_at", "issue"] } }, now);
+assert.match(
+  heartbeatAndUpdatedAtQueryLog[0],
+  /order by coalesce\("heartbeat_at"::timestamptz, "updated_at"::timestamptz\) desc nulls last/,
+  "schemas with heartbeat_at and updated_at must order by per-row heartbeat-or-updated recency"
+);
+assert.match(heartbeatAndUpdatedAtQueryLog[0], /"heartbeat_at"::timestamptz as "heartbeatAt"/, "dedicated heartbeat column remains selected as heartbeatAt");
+
 const sparseStatus = telemetry.shapeAutonomousRunStatus({ id: null, status: null, heartbeatAt: null, phase: null, cycle: null, issueNumber: null, branch: null, repository: null, observedAt: null }, now);
 assert.equal(sparseStatus.status, "unknown", "missing status must degrade to unknown");
 assert.equal(sparseStatus.heartbeatAgeSeconds, null, "missing heartbeat must not crash or fabricate an age");

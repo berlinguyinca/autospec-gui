@@ -227,7 +227,7 @@ export async function getLatestAutonomousRunStatus(
   const cycle = pickColumn(table, ["cycle", "current_cycle", "cycle_number", "iteration", "round"]);
   const issueNumber = pickColumn(table, ["issue_number", "issue", "github_issue_number", "active_issue"]);
   const observedAt = pickColumn(table, ["updated_at", "started_at", "created_at", "claimed_at", "ts", "timestamp"]);
-  const latestAt = heartbeatAt ?? observedAt;
+  const latestOrder = recencyOrderExpr(heartbeatAt, observedAt);
 
   const rows = await client.query<AutonomousRunStatusRow>(
     `select ${textExpr(id, "unknown")} as id,
@@ -240,7 +240,7 @@ export async function getLatestAutonomousRunStatus(
             ${nullableTextExpr(issueNumber)} as "issueNumber",
             ${dateExpr(observedAt)} as "observedAt"
        from ${quoteIdentifier(table.name)}
-      order by ${orderExpr(latestAt)} desc
+      order by ${latestOrder}
       limit 1`
   );
 
@@ -697,6 +697,15 @@ function windowPredicate(column: string | null): string {
 
 function orderExpr(column: string | null): string {
   return column ? `${quoteIdentifier(column)}::timestamptz` : "now()";
+}
+
+function recencyOrderExpr(primary: string | null, fallback: string | null): string {
+  const expressions = [primary, fallback]
+    .filter((column): column is string => Boolean(column))
+    .map((column) => `${quoteIdentifier(column)}::timestamptz`);
+
+  const recency = expressions.length > 0 ? `coalesce(${expressions.join(", ")})` : "now()";
+  return `${recency} desc nulls last`;
 }
 
 function coerceDate(value: Date | string | null): Date | null {
