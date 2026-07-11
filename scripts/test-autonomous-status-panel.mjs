@@ -71,6 +71,66 @@ assert.deepEqual(fullStatus, {
   observedAt: new Date("2026-07-11T12:00:00Z")
 });
 
+
+const parsedIssueStatus = telemetry.shapeAutonomousRunStatus({
+  id: "run-issue-text",
+  repository: "repo",
+  branch: "branch",
+  status: "waiting",
+  heartbeatAt: null,
+  phase: null,
+  cycle: null,
+  issueNumber: "#26",
+  observedAt: null
+}, now);
+assert.equal(parsedIssueStatus.issueNumber, 26, "issue strings with # prefixes should parse to a finite issue number");
+
+for (const issueNumber of ["", "not-an-issue", "https://github.com/berlinguyinca/autospec-gui/issues/not-number"]) {
+  const status = telemetry.shapeAutonomousRunStatus({
+    id: "run-nonnumeric-issue",
+    repository: "repo",
+    branch: "branch",
+    status: "waiting",
+    heartbeatAt: null,
+    phase: null,
+    cycle: null,
+    issueNumber,
+    observedAt: null
+  }, now);
+  assert.equal(status.issueNumber, null, `${issueNumber || "empty issue"} should parse to null instead of NaN`);
+}
+
+const queryLog = [];
+const telemetryWithUpdatedAtOnly = loadTsModule(telemetryPath, {
+  "./config": { getAutospecServerConfig: () => ({ telemetryDatabaseUrl: "postgres://unit:redacted@localhost/db", telemetrySchema: "public", readOnly: true }) },
+  "./db": {
+    quoteIdentifier: (identifier) => `"${identifier}"`,
+    withReadOnlyTelemetryClient: async (callback) => callback({ query: async () => ({ rows: [] }) })
+  }
+});
+const updatedAtOnlyStatus = await telemetryWithUpdatedAtOnly.getLatestAutonomousRunStatus({
+  query: async (sql) => {
+    queryLog.push(sql);
+    return { rows: [{
+      id: "run-updated-only",
+      repository: "repo",
+      branch: "branch",
+      status: "waiting",
+      heartbeatAt: null,
+      phase: null,
+      cycle: null,
+      issueNumber: "#26",
+      observedAt: "2026-07-11T12:05:00Z"
+    }] };
+  }
+}, { schemaName: "public", tables: { autospec_runs: ["id", "repository", "branch", "status", "updated_at", "issue"] } }, now);
+assert.equal(updatedAtOnlyStatus.heartbeatAt, null, "updated_at-only schemas must not fabricate heartbeat timestamps");
+assert.equal(updatedAtOnlyStatus.heartbeatAgeSeconds, null, "updated_at-only schemas must render heartbeat as unavailable");
+assert.equal(updatedAtOnlyStatus.issueNumber, 26, "text issue columns should be selected safely and parsed after query");
+assert.match(queryLog[0], /null::timestamptz as "heartbeatAt"/, "updated_at must not be selected as heartbeatAt");
+assert.doesNotMatch(queryLog[0], /"issue"::numeric/, "text issue candidates must not be cast to numeric in SQL");
+assert.match(queryLog[0], /"issue"::text as "issueNumber"/, "text issue candidates should be selected as text for safe parsing");
+
 const sparseStatus = telemetry.shapeAutonomousRunStatus({ id: null, status: null, heartbeatAt: null, phase: null, cycle: null, issueNumber: null, branch: null, repository: null, observedAt: null }, now);
 assert.equal(sparseStatus.status, "unknown", "missing status must degrade to unknown");
 assert.equal(sparseStatus.heartbeatAgeSeconds, null, "missing heartbeat must not crash or fabricate an age");

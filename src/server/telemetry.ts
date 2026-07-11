@@ -112,7 +112,7 @@ type AutonomousRunStatusRow = {
   heartbeatAt: Date | string | null;
   phase: string | null;
   cycle: string | number | null;
-  issueNumber: string | number | null;
+  issueNumber: string | null;
   observedAt: Date | string | null;
 };
 
@@ -148,7 +148,7 @@ const EVENT_TABLES = ["autospec_events", "events", "telemetry_events"];
 const PR_TABLES = ["pull_requests", "prs", "github_pull_requests"];
 const AGENT_TABLES = ["agent_activity", "agents", "worker_activity"];
 const ERROR_TABLES = ["errors", "error_events", "failures"];
-const HEARTBEAT_COLUMNS = ["heartbeat_at", "last_heartbeat_at", "heartbeat_ts", "last_seen_at", "updated_at"];
+const HEARTBEAT_COLUMNS = ["heartbeat_at", "last_heartbeat_at", "heartbeat_ts", "last_seen_at"];
 
 export async function discoverTelemetrySchema(
   client: ReadOnlyTelemetryClient,
@@ -237,7 +237,7 @@ export async function getLatestAutonomousRunStatus(
             ${dateExpr(heartbeatAt)} as "heartbeatAt",
             ${nullableTextExpr(phase)} as phase,
             ${nullableTextExpr(cycle)} as cycle,
-            ${numberExpr(issueNumber)} as "issueNumber",
+            ${nullableTextExpr(issueNumber)} as "issueNumber",
             ${dateExpr(observedAt)} as "observedAt"
        from ${quoteIdentifier(table.name)}
       order by ${orderExpr(latestAt)} desc
@@ -262,7 +262,7 @@ export function shapeAutonomousRunStatus(row: AutonomousRunStatusRow | null, now
     heartbeatAgeSeconds,
     phase: emptyToNull(row.phase),
     cycle: emptyToNull(row.cycle === null ? null : String(row.cycle)),
-    issueNumber: coerceNumber(row.issueNumber),
+    issueNumber: parseIssueNumber(row.issueNumber),
     observedAt: coerceDate(row.observedAt)
   };
 }
@@ -712,6 +712,18 @@ function coerceNumber(value: string | number | null): number | null {
 function emptyToNull(value: string | null): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+function parseIssueNumber(value: string | number | null): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+
+  const match = trimmed.match(/^#?(\d+)$/) ?? trimmed.match(/\/issues\/(\d+)(?:\b|$)/);
+  if (!match) return null;
+
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function emptyIssueThroughput(): IssueThroughput {
