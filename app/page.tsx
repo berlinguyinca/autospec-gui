@@ -1,3 +1,5 @@
+import TelemetryExplorer, { type TelemetryEvent } from "./telemetry-explorer";
+
 type MetricPoint = {
   label: string;
   value: number;
@@ -56,6 +58,15 @@ const agentActivity: AgentActivity[] = [
   { phase: "implement", tier: "standard", issue: "#8", elapsed: "37m", outcome: "merged" },
   { phase: "verify", tier: "spark", issue: "#12", elapsed: "9m", outcome: "clean" },
   { phase: "repair", tier: "standard", issue: "#5", elapsed: "22m", outcome: "paused" }
+];
+
+
+const telemetryEvents: TelemetryEvent[] = [
+  { id: "run-42", category: "runs", label: "Run 42", status: "running", phase: "implement", repository: "berlinguyinca/autospec-gui", timestamp: "2026-07-11T06:00:00Z", detail: "Phase 4 implementer is updating telemetry dashboard controls.", value: 6 },
+  { id: "issue-6", category: "issues", label: "Issue 6", status: "merged", phase: "verify", repository: "berlinguyinca/autospec-gui", timestamp: "2026-07-10T10:00:00Z", detail: "Interactive filters and drilldown controls reached review.", value: 11 },
+  { id: "pr-4", category: "pull-requests", label: "PR 4", status: "failed", phase: "ci", repository: "berlinguyinca/autospec-gui", timestamp: "2026-07-09T08:00:00Z", detail: "Required check failure is grouped for investigation.", value: 1 },
+  { id: "error-2", category: "errors", label: "Error 2", status: "paused", phase: "repair", repository: "autospec-core", timestamp: "2026-07-11T02:30:00Z", detail: "Validation timeout is visible without exposing recovery controls.", value: 3 },
+  { id: "agent-1", category: "runs", label: "Agent 1", status: "clean", phase: "verify", repository: "autospec-core", timestamp: "2026-07-11T04:15:00Z", detail: "Verifier lane returned clean evidence for the selected run.", value: 9 }
 ];
 
 const errors = [
@@ -184,6 +195,8 @@ export default function Home() {
           <div className="metric-list">{bars(prHealth)}</div>
         </article>
       </section>
+
+      <TelemetryExplorer events={telemetryEvents} />
 
       <section className="detail-grid" aria-label="Operational detail">
         <article className="panel">
