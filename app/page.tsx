@@ -1,4 +1,8 @@
+import { AutospecConfigError } from "../src/server/config";
+import { getTelemetryOverview, type AutonomousRunStatus } from "../src/server/telemetry";
 import TelemetryExplorer, { type TelemetryEvent } from "./telemetry-explorer";
+
+export const dynamic = "force-dynamic";
 
 type MetricPoint = {
   label: string;
@@ -20,6 +24,10 @@ type AgentActivity = {
   elapsed: string;
   outcome: string;
 };
+
+type OverviewStatusState =
+  | { kind: "ready"; status: AutonomousRunStatus | null }
+  | { kind: "config-missing"; message: string };
 
 const runStatus: MetricPoint[] = [
   { label: "Succeeded", value: 42, tone: "good" },
@@ -150,7 +158,91 @@ function Donut({ points, label }: { points: MetricPoint[]; label: string }) {
   );
 }
 
-export default function Home() {
+
+async function getOverviewStatusState(): Promise<OverviewStatusState> {
+  try {
+    const overview = await getTelemetryOverview(24);
+    return { kind: "ready", status: overview.autonomousRunStatus };
+  } catch (error) {
+    if (error instanceof AutospecConfigError) {
+      return { kind: "config-missing", message: error.message };
+    }
+    throw error;
+  }
+}
+
+function AutonomousStatusPanel({ state }: { state: OverviewStatusState }) {
+  if (state.kind === "config-missing") {
+    return (
+      <article className="panel status-panel" aria-labelledby="autonomous-status-title">
+        <p className="panel-kicker">Autonomous run status</p>
+        <h2 id="autonomous-status-title">Telemetry status unavailable</h2>
+        <p>Configure server-side telemetry to show the latest autonomous run status.</p>
+        <p className="status-note">{state.message}</p>
+      </article>
+    );
+  }
+
+  if (!state.status) {
+    return (
+      <article className="panel status-panel" aria-labelledby="autonomous-status-title">
+        <p className="panel-kicker">Autonomous run status</p>
+        <h2 id="autonomous-status-title">No run telemetry yet</h2>
+        <p>The configured telemetry source has no autonomous run rows to summarize.</p>
+        <StatusFacts facts={[
+          ["Status", "Unavailable"],
+          ["Heartbeat", "Unavailable"],
+          ["Phase", "Unavailable"]
+        ]} />
+      </article>
+    );
+  }
+
+  const status = state.status;
+  const facts: Array<[string, string]> = [
+    ["Status", status.status],
+    ["Heartbeat", formatHeartbeatAge(status.heartbeatAgeSeconds)],
+    ["Phase", status.phase ?? "Unavailable"],
+    ["Cycle", status.cycle ?? "Unavailable"],
+    ["Issue", status.issueNumber === null ? "Unavailable" : `#${status.issueNumber}`],
+    ["Branch", status.branch ?? "Unavailable"]
+  ];
+
+  return (
+    <article className="panel status-panel" aria-labelledby="autonomous-status-title">
+      <p className="panel-kicker">Autonomous run status</p>
+      <h2 id="autonomous-status-title"><span className="status-pill">{status.status}</span></h2>
+      <p>Latest autonomous run signal from server-side telemetry reads.</p>
+      <StatusFacts facts={facts} />
+    </article>
+  );
+}
+
+function StatusFacts({ facts }: { facts: Array<[string, string]> }) {
+  return (
+    <dl className="status-facts">
+      {facts.map(([label, value]) => (
+        <div aria-label={`${label} ${value}`} key={label}>
+          <dt>{label}</dt>
+          <dd>{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function formatHeartbeatAge(seconds: number | null): string {
+  if (seconds === null) return "Unavailable";
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ago`;
+}
+
+export default async function Home() {
+  const statusState = await getOverviewStatusState();
+
   return (
     <main className="shell" id="main-content">
       <section className="hero" aria-labelledby="dashboard-title">
@@ -162,6 +254,8 @@ export default function Home() {
       </section>
 
       <section className="summary-grid" aria-label="Telemetry summary">
+        <AutonomousStatusPanel state={statusState} />
+
         <article className="panel chart-panel">
           <div>
             <p className="panel-kicker">Run throughput</p>

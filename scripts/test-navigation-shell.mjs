@@ -45,6 +45,7 @@ async function renderComponent(sourcePath, moduleName, props = {}) {
     .replace(/^import\s+["\']\.\/globals\.css["\'];\s*$/m, "")
     .replace(/^import\s+TelemetryExplorer[^;]+;\s*$/m, "")
     .replace(/^import\s+\{\s*AutospecConfigError\s*\}\s+from\s+["']\.\.\/\.\.\/src\/server\/config["'];\s*$/m, "class AutospecConfigError extends Error {}")
+    .replace(/^import\s+\{\s*AutospecConfigError\s*\}\s+from\s+["']\.\.\/src\/server\/config["'];\s*$/m, "class AutospecConfigError extends Error {}")
     .replace(/^import\s+\{\s*getTelemetryOverview[^;]+;\s*$/m, `async function getTelemetryOverview() {
   return {
     window: { hours: 24, from: new Date("2026-07-10T12:00:00Z"), to: new Date("2026-07-11T12:00:00Z") },
@@ -53,7 +54,8 @@ async function renderComponent(sourcePath, moduleName, props = {}) {
     issueThroughput: { created: 0, classified: 0, implemented: 0, merged: 0, failed: 0, paused: 0 },
     pullRequestHealth: { open: 0, merged: 0, failedChecks: 0, pendingChecks: 0, advisoryChecks: 0 },
     agentActivity: [],
-    errorSummary: []
+    errorSummary: [],
+    autonomousRunStatus: null
   };
 }`)
     .replace(/<TelemetryExplorer\s+events=\{telemetryEvents\}\s+\/>/, "<section>Interactive telemetry filters placeholder</section>");

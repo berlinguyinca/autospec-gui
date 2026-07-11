@@ -285,6 +285,49 @@ th {
 }
 
 
+.status-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.status-panel h2 {
+  margin-bottom: 0;
+}
+
+.status-note {
+  border-radius: 14px;
+  background: #f8fafc;
+  color: var(--foreground);
+  font-size: 14px;
+  padding: 12px;
+}
+
+.status-facts {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.status-facts div {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 12px;
+}
+
+.status-facts dt {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.status-facts dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
 .detail-list {
   display: grid;
   gap: 12px;
