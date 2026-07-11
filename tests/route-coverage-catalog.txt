@@ -11,3 +11,5 @@
 /pull-requests/page
 /errors
 /errors/page
+/runs/[runId]
+/runs/[runId]/page

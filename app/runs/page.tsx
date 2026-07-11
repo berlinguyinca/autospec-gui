@@ -94,7 +94,7 @@ function RunsTable({ runs, windowLabel }: { runs: RecentRun[]; windowLabel: stri
         <tbody>
           {runs.map((run) => (
             <tr key={run.id}>
-              <td>{run.id}</td>
+              <td>{run.id && run.id !== "unknown" ? <a href={`/runs/${encodeURIComponent(run.id)}`}>{run.id}</a> : run.id}</td>
               <td>{run.repository}</td>
               <td>{run.branch}</td>
               <td><span className="status-pill">{run.status}</span></td>

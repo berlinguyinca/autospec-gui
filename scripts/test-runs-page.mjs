@@ -138,6 +138,8 @@ for (const expected of [
   assert.match(liveHtml, new RegExp(escapeRegExp(expected)), `live runs should render ${expected}`);
 }
 assert.match(liveHtml, /2 recent runs/i, "live state must summarize live row count");
+assert.match(liveHtml, /<a\b[^>]*href="\/runs\/run-live-2"[^>]*>run-live-2<\/a>/, "live run ids must link to their detail page");
+assert.match(liveHtml, /<a\b[^>]*href="\/runs\/run-live-1"[^>]*>run-live-1<\/a>/, "each live run row with an id must link to its detail page");
 assert.doesNotMatch(liveHtml, /run-1|run-2|DATABASE_URL|postgres:\/\//i, "live state must not render static fixture rows or secrets");
 
 function escapeRegExp(value) {

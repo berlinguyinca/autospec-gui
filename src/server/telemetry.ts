@@ -24,6 +24,40 @@ export type RecentRun = {
   durationSeconds: number | null;
 };
 
+export type RunSummary = RecentRun & {
+  issueNumber: number | null;
+  pullRequestNumber: number | null;
+};
+
+export type RunPhase = {
+  name: string;
+  status: string;
+  startedAt: Date | null;
+  endedAt: Date | null;
+  durationSeconds: number | null;
+  summary: string;
+};
+
+export type ValidationEvidence = {
+  name: string;
+  status: string;
+  evidence: string;
+  checkedAt: Date | null;
+};
+
+export type RunRelatedError = {
+  message: string;
+  count: number;
+  latestOccurrence: Date | null;
+};
+
+export type RunDetail = {
+  run: RunSummary;
+  phases: RunPhase[];
+  validations: ValidationEvidence[];
+  errors: RunRelatedError[];
+};
+
 export type IssueThroughput = {
   created: number;
   classified: number;
@@ -129,6 +163,24 @@ export async function getTelemetryOverview(hours = 24): Promise<TelemetryOvervie
   }, config);
 }
 
+
+export async function getRunDetail(runId: string): Promise<RunDetail | null> {
+  const config = getAutospecServerConfig();
+  return withReadOnlyTelemetryClient(async (client) => {
+    const discovered = await discoverTelemetrySchema(client, config.telemetrySchema);
+    const run = await getRunSummary(client, discovered, runId);
+    if (!run) return null;
+
+    const [phases, validations, errors] = await Promise.all([
+      listRunPhases(client, discovered, runId),
+      listValidationEvidence(client, discovered, runId),
+      listRunRelatedErrors(client, discovered, runId)
+    ]);
+
+    return { run, phases, validations, errors };
+  }, config);
+}
+
 export async function listRecentRuns(
   client: ReadOnlyTelemetryClient,
   discovered: DiscoveredTelemetrySchema,
@@ -179,6 +231,195 @@ export async function listRecentRuns(
     endedAt: coerceDate(row.endedAt),
     durationSeconds: coerceNumber(row.durationSeconds)
   }));
+}
+
+
+async function getRunSummary(
+  client: ReadOnlyTelemetryClient,
+  discovered: DiscoveredTelemetrySchema,
+  runIdValue: string
+): Promise<RunSummary | null> {
+  const table = findTable(discovered, RUN_TABLES);
+  if (!table) return null;
+
+  const id = pickColumn(table, ["id", "run_id", "dispatch_id"]);
+  if (!id) return null;
+
+  const repository = pickColumn(table, ["repository", "repo", "repo_name", "name_with_owner"]);
+  const branch = pickColumn(table, ["branch", "head_branch", "ref"]);
+  const status = pickColumn(table, ["status", "state", "outcome"]);
+  const startedAt = pickColumn(table, ["started_at", "claimed_at", "ts", "timestamp"]);
+  const endedAt = pickColumn(table, ["ended_at", "finished_at", "merged_at", "updated_at"]);
+  const issueNumber = pickColumn(table, ["issue_number", "issue", "github_issue_number"]);
+  const pullRequestNumber = pickColumn(table, ["pull_request_number", "pr_number", "pr", "github_pr_number"]);
+
+  const rows = await client.query<{
+    id: string | null;
+    repository: string | null;
+    branch: string | null;
+    status: string | null;
+    startedAt: Date | string | null;
+    endedAt: Date | string | null;
+    durationSeconds: string | number | null;
+    issueNumber: string | number | null;
+    pullRequestNumber: string | number | null;
+  }>(
+    `select ${textExpr(id, "unknown")} as id,
+            ${textExpr(repository, "unknown")} as repository,
+            ${textExpr(branch, "unknown")} as branch,
+            ${textExpr(status, "unknown")} as status,
+            ${dateExpr(startedAt)} as "startedAt",
+            ${dateExpr(endedAt)} as "endedAt",
+            case when ${columnExpr(startedAt)} is not null and ${columnExpr(endedAt)} is not null
+                 then extract(epoch from (${columnExpr(endedAt)}::timestamptz - ${columnExpr(startedAt)}::timestamptz))
+                 else null end as "durationSeconds",
+            ${numberExpr(issueNumber)} as "issueNumber",
+            ${numberExpr(pullRequestNumber)} as "pullRequestNumber"
+       from ${quoteIdentifier(table.name)}
+      where ${quoteIdentifier(id)}::text = $1
+      limit 1`,
+    [runIdValue]
+  );
+
+  const row = rows.rows[0];
+  if (!row) return null;
+
+  return {
+    id: row.id ?? runIdValue,
+    repository: row.repository ?? "unknown",
+    branch: row.branch ?? "unknown",
+    status: row.status ?? "unknown",
+    startedAt: coerceDate(row.startedAt),
+    endedAt: coerceDate(row.endedAt),
+    durationSeconds: coerceNumber(row.durationSeconds),
+    issueNumber: coerceNumber(row.issueNumber),
+    pullRequestNumber: coerceNumber(row.pullRequestNumber)
+  };
+}
+
+async function listRunPhases(
+  client: ReadOnlyTelemetryClient,
+  discovered: DiscoveredTelemetrySchema,
+  runIdValue: string
+): Promise<RunPhase[]> {
+  const table = findTable(discovered, AGENT_TABLES) ?? findTable(discovered, EVENT_TABLES);
+  if (!table) return [];
+
+  const runId = pickColumn(table, ["run_id", "dispatch_id", "id"]);
+  if (!runId) return [];
+
+  const name = pickColumn(table, ["phase", "step", "lane", "event_type", "type", "event"]);
+  const status = pickColumn(table, ["outcome", "status", "state"]);
+  const startedAt = pickColumn(table, ["started_at", "created_at", "ts", "timestamp", "happened_at"]);
+  const endedAt = pickColumn(table, ["ended_at", "finished_at", "updated_at"]);
+  const elapsedSeconds = pickColumn(table, ["elapsed_seconds", "duration_seconds", "elapsed"]);
+  const summary = pickColumn(table, ["summary", "message", "details", "description"]);
+
+  const rows = await client.query<{
+    name: string | null;
+    status: string | null;
+    startedAt: Date | string | null;
+    endedAt: Date | string | null;
+    durationSeconds: string | number | null;
+    summary: string | null;
+  }>(
+    `select ${textExpr(name, "unknown phase")} as name,
+            ${textExpr(status, "unknown")} as status,
+            ${dateExpr(startedAt)} as "startedAt",
+            ${dateExpr(endedAt)} as "endedAt",
+            coalesce(${numberExpr(elapsedSeconds)},
+              case when ${columnExpr(startedAt)} is not null and ${columnExpr(endedAt)} is not null
+                   then extract(epoch from (${columnExpr(endedAt)}::timestamptz - ${columnExpr(startedAt)}::timestamptz))
+                   else null end) as "durationSeconds",
+            ${textExpr(summary, "No summary recorded")} as summary
+       from ${quoteIdentifier(table.name)}
+      where ${quoteIdentifier(runId)}::text = $1
+      order by ${orderExpr(startedAt)} asc
+      limit 50`,
+    [runIdValue]
+  );
+
+  return rows.rows.map((row) => ({
+    name: row.name ?? "unknown phase",
+    status: row.status ?? "unknown",
+    startedAt: coerceDate(row.startedAt),
+    endedAt: coerceDate(row.endedAt),
+    durationSeconds: coerceNumber(row.durationSeconds),
+    summary: row.summary ?? "No summary recorded"
+  }));
+}
+
+async function listValidationEvidence(
+  client: ReadOnlyTelemetryClient,
+  discovered: DiscoveredTelemetrySchema,
+  runIdValue: string
+): Promise<ValidationEvidence[]> {
+  const table = findTable(discovered, EVENT_TABLES) ?? findTable(discovered, AGENT_TABLES);
+  if (!table) return [];
+
+  const runId = pickColumn(table, ["run_id", "dispatch_id", "id"]);
+  if (!runId) return [];
+
+  const name = pickColumn(table, ["check_name", "validation", "phase", "step", "event_type", "type", "event"]);
+  const status = pickColumn(table, ["check_status", "outcome", "status", "state"]);
+  const evidence = pickColumn(table, ["evidence", "summary", "message", "details", "description"]);
+  const checkedAt = pickColumn(table, ["checked_at", "finished_at", "updated_at", "created_at", "ts", "timestamp", "happened_at"]);
+  const kind = pickColumn(table, ["event_type", "type", "event", "phase", "step"]);
+  const validationFilter = kind ? ` and lower(${quoteIdentifier(kind)}::text) similar to '%(valid|test|lint|typecheck|build|check)%'` : "";
+
+  const rows = await client.query<{
+    name: string | null;
+    status: string | null;
+    evidence: string | null;
+    checkedAt: Date | string | null;
+  }>(
+    `select ${textExpr(name, "validation")} as name,
+            ${textExpr(status, "unknown")} as status,
+            ${textExpr(evidence, "No evidence recorded")} as evidence,
+            ${dateExpr(checkedAt)} as "checkedAt"
+       from ${quoteIdentifier(table.name)}
+      where ${quoteIdentifier(runId)}::text = $1${validationFilter}
+      order by ${orderExpr(checkedAt)} desc
+      limit 25`,
+    [runIdValue]
+  );
+
+  return rows.rows.map((row) => ({
+    name: row.name ?? "validation",
+    status: row.status ?? "unknown",
+    evidence: row.evidence ?? "No evidence recorded",
+    checkedAt: coerceDate(row.checkedAt)
+  }));
+}
+
+async function listRunRelatedErrors(
+  client: ReadOnlyTelemetryClient,
+  discovered: DiscoveredTelemetrySchema,
+  runIdValue: string
+): Promise<RunRelatedError[]> {
+  const table = findTable(discovered, ERROR_TABLES) ?? findTable(discovered, EVENT_TABLES);
+  if (!table) return [];
+
+  const runId = pickColumn(table, ["run_id", "dispatch_id", "id"]);
+  if (!runId) return [];
+
+  const message = pickColumn(table, ["message", "error_message", "failure", "details", "summary"]);
+  const happenedAt = pickColumn(table, ["created_at", "ts", "timestamp", "happened_at", "updated_at"]);
+
+  const rows = await client.query<RunRelatedError>(
+    `select ${textExpr(message, "unknown failure")} as message,
+            count(*)::int as count,
+            max(${dateExpr(happenedAt)}) as "latestOccurrence"
+       from ${quoteIdentifier(table.name)}
+      where ${quoteIdentifier(runId)}::text = $1
+        and lower(${textExpr(message, "")}) <> ''
+      group by 1
+      order by count desc, "latestOccurrence" desc
+      limit 25`,
+    [runIdValue]
+  );
+
+  return rows.rows.map((row) => ({ ...row, latestOccurrence: coerceDate(row.latestOccurrence) }));
 }
 
 async function listRunStatusCounts(
