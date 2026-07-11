@@ -141,10 +141,10 @@ function Donut({ points, label }: { points: MetricPoint[]; label: string }) {
 
 export default function Home() {
   return (
-    <main className="shell">
+    <main className="shell" id="main-content">
       <section className="hero" aria-labelledby="dashboard-title">
         <p className="eyebrow">autospec-gui · read-only overview</p>
-        <h1 id="dashboard-title">Overview telemetry visualizations</h1>
+        <h1 id="dashboard-title">Overview telemetry</h1>
         <p>
           Last 24 hours of representative autospec activity, rendered from dynamic telemetry-like structures until the Postgres read model lands.
         </p>

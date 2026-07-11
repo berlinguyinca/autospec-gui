@@ -14,3 +14,4 @@ pnpm-debug.log*
 .DS_Store
 
 .tmp-test-overview/
+.tmp-test-navigation-shell/
