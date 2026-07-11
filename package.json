@@ -10,7 +10,7 @@
     "audit:deps": "node scripts/audit-dependencies.mjs",
     "typecheck": "tsc --noEmit",
     "validate": "bash scripts/validate.sh",
-    "test": "node scripts/test-validate-lint-gate.mjs && node scripts/test-config.mjs && node scripts/test-overview.mjs && node scripts/test-navigation-shell.mjs && node scripts/test-telemetry-read-models.mjs && node scripts/test-telemetry-filters.mjs && node scripts/test-postgres-harness-contract.mjs",
+    "test": "node scripts/test-package-engines.mjs && node scripts/test-validate-lint-gate.mjs && node scripts/test-config.mjs && node scripts/test-overview.mjs && node scripts/test-navigation-shell.mjs && node scripts/test-telemetry-read-models.mjs && node scripts/test-telemetry-filters.mjs && node scripts/test-postgres-harness-contract.mjs",
     "test:integration:postgres": "node scripts/test-postgres-fixtures.mjs"
   },
   "dependencies": {
@@ -28,5 +28,8 @@
   },
   "overrides": {
     "postcss": "^8.5.10"
+  },
+  "engines": {
+    "node": ">=20.9.0"
   }
 }
