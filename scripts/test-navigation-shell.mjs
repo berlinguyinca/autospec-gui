@@ -41,7 +41,10 @@ for (const [label, href] of expectedSections) {
 }
 
 async function renderComponent(sourcePath, moduleName, props = {}) {
-  const source = readFileSync(sourcePath, "utf8").replace(/^import\s+["']\.\/globals\.css["'];\s*$/m, "");
+  const source = readFileSync(sourcePath, "utf8")
+    .replace(/^import\s+["\']\.\/globals\.css["\'];\s*$/m, "")
+    .replace(/^import\s+TelemetryExplorer[^;]+;\s*$/m, "")
+    .replace(/<TelemetryExplorer\s+events=\{telemetryEvents\}\s+\/>/, "<section>Interactive telemetry filters placeholder</section>");
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
       jsx: ts.JsxEmit.ReactJSX,

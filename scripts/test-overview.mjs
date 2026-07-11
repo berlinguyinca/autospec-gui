@@ -9,7 +9,9 @@ import ts from "typescript";
 const pagePath = join(process.cwd(), "app", "page.tsx");
 assert.ok(existsSync(pagePath), "app/page.tsx must exist");
 
-const source = readFileSync(pagePath, "utf8");
+const source = readFileSync(pagePath, "utf8")
+  .replace(/^import\s+TelemetryExplorer[^;]+;\s*$/m, "")
+  .replace(/<TelemetryExplorer\s+events=\{telemetryEvents\}\s+\/>/, "<section>Interactive telemetry filters placeholder</section>");
 const compiled = ts.transpileModule(source, {
   compilerOptions: {
     jsx: ts.JsxEmit.ReactJSX,
