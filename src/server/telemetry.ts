@@ -91,6 +91,31 @@ export type ErrorSummary = {
   repository: string;
 };
 
+export type AutonomousRunStatus = {
+  id: string;
+  repository: string;
+  branch: string | null;
+  status: string;
+  heartbeatAt: Date | null;
+  heartbeatAgeSeconds: number | null;
+  phase: string | null;
+  cycle: string | null;
+  issueNumber: number | null;
+  observedAt: Date | null;
+};
+
+type AutonomousRunStatusRow = {
+  id: string | null;
+  repository: string | null;
+  branch: string | null;
+  status: string | null;
+  heartbeatAt: Date | string | null;
+  phase: string | null;
+  cycle: string | number | null;
+  issueNumber: string | number | null;
+  observedAt: Date | string | null;
+};
+
 export type TelemetryOverview = {
   window: TelemetryTimeWindow;
   runStatusCounts: RunStatusCount[];
@@ -99,6 +124,7 @@ export type TelemetryOverview = {
   pullRequestHealth: PullRequestHealth;
   agentActivity: AgentActivity[];
   errorSummary: ErrorSummary[];
+  autonomousRunStatus: AutonomousRunStatus | null;
 };
 
 export type TelemetryColumn = {
@@ -122,6 +148,7 @@ const EVENT_TABLES = ["autospec_events", "events", "telemetry_events"];
 const PR_TABLES = ["pull_requests", "prs", "github_pull_requests"];
 const AGENT_TABLES = ["agent_activity", "agents", "worker_activity"];
 const ERROR_TABLES = ["errors", "error_events", "failures"];
+const HEARTBEAT_COLUMNS = ["heartbeat_at", "last_heartbeat_at", "heartbeat_ts", "last_seen_at", "updated_at"];
 
 export async function discoverTelemetrySchema(
   client: ReadOnlyTelemetryClient,
@@ -150,16 +177,17 @@ export async function getTelemetryOverview(hours = 24): Promise<TelemetryOvervie
     const discovered = await discoverTelemetrySchema(client, config.telemetrySchema);
     const window = buildWindow(hours);
 
-    const [runStatusCounts, recentRuns, issueThroughput, pullRequestHealth, agentActivity, errorSummary] = await Promise.all([
+    const [runStatusCounts, recentRuns, issueThroughput, pullRequestHealth, agentActivity, errorSummary, autonomousRunStatus] = await Promise.all([
       listRunStatusCounts(client, discovered, window),
       listRecentRuns(client, discovered, window),
       getIssueThroughput(client, discovered, window),
       getPullRequestHealth(client, discovered, window),
       listAgentActivity(client, discovered, window),
-      listErrorSummary(client, discovered, window)
+      listErrorSummary(client, discovered, window),
+      getLatestAutonomousRunStatus(client, discovered)
     ]);
 
-    return { window, runStatusCounts, recentRuns, issueThroughput, pullRequestHealth, agentActivity, errorSummary };
+    return { window, runStatusCounts, recentRuns, issueThroughput, pullRequestHealth, agentActivity, errorSummary, autonomousRunStatus };
   }, config);
 }
 
@@ -179,6 +207,64 @@ export async function getRunDetail(runId: string): Promise<RunDetail | null> {
 
     return { run, phases, validations, errors };
   }, config);
+}
+
+
+export async function getLatestAutonomousRunStatus(
+  client: ReadOnlyTelemetryClient,
+  discovered: DiscoveredTelemetrySchema,
+  now = new Date()
+): Promise<AutonomousRunStatus | null> {
+  const table = findTable(discovered, RUN_TABLES);
+  if (!table) return null;
+
+  const id = pickColumn(table, ["id", "run_id", "dispatch_id"]);
+  const repository = pickColumn(table, ["repository", "repo", "repo_name", "name_with_owner"]);
+  const branch = pickColumn(table, ["branch", "head_branch", "ref"]);
+  const status = pickColumn(table, ["status", "state", "outcome"]);
+  const heartbeatAt = pickColumn(table, HEARTBEAT_COLUMNS);
+  const phase = pickColumn(table, ["phase", "current_phase", "step", "current_step", "lane"]);
+  const cycle = pickColumn(table, ["cycle", "current_cycle", "cycle_number", "iteration", "round"]);
+  const issueNumber = pickColumn(table, ["issue_number", "issue", "github_issue_number", "active_issue"]);
+  const observedAt = pickColumn(table, ["updated_at", "started_at", "created_at", "claimed_at", "ts", "timestamp"]);
+  const latestAt = heartbeatAt ?? observedAt;
+
+  const rows = await client.query<AutonomousRunStatusRow>(
+    `select ${textExpr(id, "unknown")} as id,
+            ${textExpr(repository, "unknown")} as repository,
+            ${nullableTextExpr(branch)} as branch,
+            ${textExpr(status, "unknown")} as status,
+            ${dateExpr(heartbeatAt)} as "heartbeatAt",
+            ${nullableTextExpr(phase)} as phase,
+            ${nullableTextExpr(cycle)} as cycle,
+            ${numberExpr(issueNumber)} as "issueNumber",
+            ${dateExpr(observedAt)} as "observedAt"
+       from ${quoteIdentifier(table.name)}
+      order by ${orderExpr(latestAt)} desc
+      limit 1`
+  );
+
+  return shapeAutonomousRunStatus(rows.rows[0] ?? null, now);
+}
+
+export function shapeAutonomousRunStatus(row: AutonomousRunStatusRow | null, now = new Date()): AutonomousRunStatus | null {
+  if (!row) return null;
+
+  const heartbeatAt = coerceDate(row.heartbeatAt);
+  const heartbeatAgeSeconds = heartbeatAt ? Math.max(0, Math.round((now.getTime() - heartbeatAt.getTime()) / 1000)) : null;
+
+  return {
+    id: row.id ?? "unknown",
+    repository: row.repository ?? "unknown",
+    branch: emptyToNull(row.branch),
+    status: row.status ?? "unknown",
+    heartbeatAt,
+    heartbeatAgeSeconds,
+    phase: emptyToNull(row.phase),
+    cycle: emptyToNull(row.cycle === null ? null : String(row.cycle)),
+    issueNumber: coerceNumber(row.issueNumber),
+    observedAt: coerceDate(row.observedAt)
+  };
 }
 
 export async function listRecentRuns(
@@ -589,6 +675,10 @@ function textExpr(column: string | null, fallback: string): string {
   return `coalesce(${columnExpr(column)}::text, '${fallback.replaceAll("'", "''")}')`;
 }
 
+function nullableTextExpr(column: string | null): string {
+  return column ? `${quoteIdentifier(column)}::text` : "null::text";
+}
+
 function dateExpr(column: string | null): string {
   return column ? `${quoteIdentifier(column)}::timestamptz` : "null::timestamptz";
 }
@@ -617,6 +707,11 @@ function coerceDate(value: Date | string | null): Date | null {
 function coerceNumber(value: string | number | null): number | null {
   if (value === null) return null;
   return typeof value === "number" ? value : Number(value);
+}
+
+function emptyToNull(value: string | null): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
 }
 
 function emptyIssueThroughput(): IssueThroughput {
