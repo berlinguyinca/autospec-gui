@@ -27,6 +27,7 @@ fi
 node -e 'JSON.parse(require("fs").readFileSync("package.json", "utf8"))'
 
 npm run lint
+npm run audit:deps
 npm run typecheck
 npm run test
 npm run build
