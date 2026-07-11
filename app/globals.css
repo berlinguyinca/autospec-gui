@@ -729,3 +729,24 @@ th {
     margin-top: 14px;
   }
 }
+
+.empty-state-block h3 {
+  margin: 0 0 10px;
+  font-size: 20px;
+}
+
+.cell-note {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.inline-link-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}

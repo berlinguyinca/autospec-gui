@@ -10,6 +10,7 @@ const expectedSections = [
   ["Overview", "/"],
   ["Runs", "/runs"],
   ["Issues", "/issues"],
+  ["Discovery Audit", "/discovery-audit"],
   ["Pull Requests", "/pull-requests"],
   ["Errors", "/errors"]
 ];
@@ -46,6 +47,7 @@ async function renderComponent(sourcePath, moduleName, props = {}) {
     .replace(/^import\s+TelemetryExplorer[^;]+;\s*$/m, "")
     .replace(/^import\s+\{\s*AutospecConfigError\s*\}\s+from\s+["']\.\.\/\.\.\/src\/server\/config["'];\s*$/m, "class AutospecConfigError extends Error {}")
     .replace(/^import\s+\{\s*AutospecConfigError\s*\}\s+from\s+["']\.\.\/src\/server\/config["'];\s*$/m, "class AutospecConfigError extends Error {}")
+    .replace(/^import\s+\{[\s\S]*?listConfiguredDiscoveryAuditCycles[\s\S]*?\}\s+from\s+["']\.\.\/\.\.\/src\/server\/telemetry["'];\s*$/m, `async function listConfiguredDiscoveryAuditCycles() { return []; }\nfunction formatDiscoveryAuditCount(value) { return value === null ? "Unavailable" : String(value); }\nfunction formatDiscoveryAuditField(value) { return value?.trim() ? value.replaceAll("_", " ") : "Unavailable"; }`)
     .replace(/^import\s+\{\s*getTelemetryOverview[^;]+;\s*$/m, `async function getTelemetryOverview() {
   return {
     window: { hours: 24, from: new Date("2026-07-10T12:00:00Z"), to: new Date("2026-07-11T12:00:00Z") },
