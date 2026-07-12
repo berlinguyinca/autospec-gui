@@ -262,8 +262,11 @@ export async function listPullRequestDrilldowns(
   }
 
   if (filters.status !== "all") {
-    params.push(filters.status);
-    predicates.push(`lower(coalesce(${columnExpr(checkStatus)}::text, ${columnExpr(status)}::text, ${columnExpr(mergeState)}::text, '')) = lower($${params.length}::text)`);
+    const statusColumns = [status, checkStatus, mergeState].filter((column): column is string => Boolean(column));
+    if (statusColumns.length > 0) {
+      params.push(filters.status);
+      predicates.push(`(${statusColumns.map((column) => `lower(${quoteIdentifier(column)}::text) = lower($${params.length}::text)`).join(" or ")})`);
+    }
   }
 
   if (filters.failureClass !== "all" && failureClass) {
@@ -281,7 +284,7 @@ export async function listPullRequestDrilldowns(
     status: string | null;
     checkStatus: string | null;
     validationSummary: string | null;
-    linkedIssueNumber: string | number | null;
+    linkedIssueNumber: string | null;
     branch: string | null;
     mergeState: string | null;
     failureClass: string | null;
@@ -296,7 +299,7 @@ export async function listPullRequestDrilldowns(
             ${textExpr(status, "unknown")} as status,
             ${nullableTextExpr(checkStatus)} as "checkStatus",
             ${nullableTextExpr(validationSummary)} as "validationSummary",
-            ${numberExpr(linkedIssueNumber)} as "linkedIssueNumber",
+            ${nullableTextExpr(linkedIssueNumber)} as "linkedIssueNumber",
             ${nullableTextExpr(branch)} as branch,
             ${nullableTextExpr(mergeState)} as "mergeState",
             ${nullableTextExpr(failureClass)} as "failureClass",
@@ -318,7 +321,7 @@ export async function listPullRequestDrilldowns(
     status: row.status ?? "unknown",
     checkStatus: emptyToNull(row.checkStatus),
     validationSummary: emptyToNull(row.validationSummary),
-    linkedIssueNumber: coerceNumber(row.linkedIssueNumber),
+    linkedIssueNumber: parseIssueNumber(row.linkedIssueNumber),
     branch: emptyToNull(row.branch),
     mergeState: emptyToNull(row.mergeState),
     failureClass: emptyToNull(row.failureClass),

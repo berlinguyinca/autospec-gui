@@ -179,13 +179,13 @@ function PullRequestRows({ rows }: { rows: PullRequestDrilldown[] }) {
               <td>
                 <strong>{formatPullRequestLabel(row)}</strong>
                 <span className="cell-note">{row.title ?? "Missing title"}</span>
-                {row.url ? <span className="cell-note"><a href={row.url}>View PR</a></span> : null}
+                <ExternalTelemetryLink href={row.url} label="View PR" unavailableLabel="PR URL unavailable" />
               </td>
               <td>{row.repository}</td>
               <td><span className="status-pill">{row.status}</span></td>
               <td>
                 {row.checkStatus ?? "No check status recorded"}
-                {row.checkUrl ? <span className="cell-note"><a href={row.checkUrl}>View check run</a></span> : null}
+                <ExternalTelemetryLink href={row.checkUrl} label="View check run" unavailableLabel="Check URL unavailable" />
               </td>
               <td>{row.validationSummary ?? "No validation summary recorded"}</td>
               <td>{row.linkedIssueNumber === null ? "No linked issue recorded" : `Issue #${row.linkedIssueNumber}`}</td>
@@ -198,6 +198,26 @@ function PullRequestRows({ rows }: { rows: PullRequestDrilldown[] }) {
       </table>
     </div>
   );
+}
+
+
+function ExternalTelemetryLink({ href, label, unavailableLabel }: { href: string | null; label: string; unavailableLabel: string }) {
+  const safeHref = safeHttpUrl(href);
+  return (
+    <span className="cell-note">
+      {safeHref ? <a href={safeHref}>{label}</a> : unavailableLabel}
+    </span>
+  );
+}
+
+function safeHttpUrl(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
 }
 
 function EmptyPullRequestState() {

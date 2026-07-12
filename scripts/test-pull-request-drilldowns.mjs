@@ -79,6 +79,38 @@ async function renderPullRequestsPage(options, searchParams = {}) {
   return { html: renderToStaticMarkup(tree), pageModule };
 }
 
+function loadTelemetryModule() {
+  const compiled = ts.transpileModule(telemetrySource, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+      esModuleInterop: true,
+      strict: true
+    },
+    fileName: telemetryPath
+  }).outputText;
+
+  const mod = new Module(telemetryPath);
+  mod.filename = telemetryPath;
+  mod.paths = Module._nodeModulePaths(process.cwd());
+  const originalRequire = mod.require.bind(mod);
+  mod.require = (specifier) => {
+    if (specifier === "server-only") return {};
+    if (specifier === "./config") {
+      return { getAutospecServerConfig: () => ({ telemetryDatabaseUrl: "postgres://unit:redacted@localhost/db", telemetrySchema: "public", readOnly: true }) };
+    }
+    if (specifier === "./db") {
+      return {
+        quoteIdentifier: (value) => `"${String(value).replaceAll('"', '""')}"`,
+        withReadOnlyTelemetryClient: async (callback) => callback({ query: async () => ({ rows: [] }) })
+      };
+    }
+    return originalRequire(specifier);
+  };
+  mod._compile(compiled, telemetryPath);
+  return mod.exports;
+}
+
 const helperModule = loadPullRequestsPage();
 assert.equal(typeof helperModule.parsePullRequestFilters, "function", "parsePullRequestFilters must be exported for deterministic unit coverage");
 assert.equal(typeof helperModule.buildPullRequestFilterHref, "function", "buildPullRequestFilterHref must be exported for deterministic unit coverage");
@@ -97,6 +129,100 @@ assert.equal(
   "/pull-requests?repository=berlinguyinca%2Fautospec-gui&status=failed&failureClass=validation",
   "filter links must preserve non-default state in URL search params"
 );
+
+const telemetryModule = loadTelemetryModule();
+assert.equal(typeof telemetryModule.listPullRequestDrilldowns, "function", "listPullRequestDrilldowns must be exported for query regression coverage");
+
+let capturedSql = "";
+let capturedParams = [];
+const mixedRows = [
+  {
+    id: "pr-open-failed",
+    repository: "berlinguyinca/autospec-gui",
+    number: 28,
+    title: "Mixed open PR with failed check",
+    status: "open",
+    checkStatus: "failed",
+    validationSummary: "failed validation",
+    linkedIssueNumber: "#28",
+    branch: "feat/issue-28-pr-check-drilldowns",
+    mergeState: "blocked",
+    failureClass: "validation",
+    updatedAt: "2026-07-11T19:30:00Z",
+    url: "https://github.com/berlinguyinca/autospec-gui/pull/28",
+    checkUrl: "https://github.com/berlinguyinca/autospec-gui/actions/runs/28"
+  },
+  {
+    id: "pr-merged-success",
+    repository: "berlinguyinca/autospec-gui",
+    number: 29,
+    title: "Merged PR with successful check",
+    status: "merged",
+    checkStatus: "success",
+    validationSummary: "validation passed",
+    linkedIssueNumber: "https://github.com/berlinguyinca/autospec-gui/issues/29",
+    branch: "main",
+    mergeState: "clean",
+    failureClass: null,
+    updatedAt: "2026-07-11T20:30:00Z",
+    url: null,
+    checkUrl: null
+  },
+  {
+    id: "pr-nonnumeric-issue",
+    repository: "berlinguyinca/autospec-gui",
+    number: 30,
+    title: "Non numeric issue text",
+    status: "open",
+    checkStatus: "pending",
+    validationSummary: null,
+    linkedIssueNumber: "not-an-issue",
+    branch: null,
+    mergeState: null,
+    failureClass: null,
+    updatedAt: "2026-07-11T21:30:00Z",
+    url: null,
+    checkUrl: null
+  }
+];
+const fakeClient = {
+  query: async (sql, params) => {
+    capturedSql = sql;
+    capturedParams = params;
+    return { rows: mixedRows };
+  }
+};
+const discovered = {
+  schemaName: "public",
+  tables: {
+    pull_requests: [
+      "id",
+      "repository",
+      "number",
+      "title",
+      "status",
+      "check_status",
+      "validation_summary",
+      "linked_issue_number",
+      "branch",
+      "merge_state",
+      "failure_class",
+      "updated_at",
+      "url",
+      "check_url"
+    ]
+  }
+};
+const shapedRows = await telemetryModule.listPullRequestDrilldowns(fakeClient, discovered, { repository: "all", status: "open", windowHours: 24, failureClass: "all" }, 10);
+assert.match(capturedSql, /lower\("status"::text\) = lower\(\$2::text\)/, "PR status filters must compare the PR status column directly");
+assert.doesNotMatch(capturedSql, /coalesce\("check_status"::text, "status"::text, "merge_state"::text/, "PR status filter must not be hidden behind first-non-null check status coalescing");
+assert.equal(capturedParams[1], "open", "mixed PR/check regression must exercise status=open filtering");
+assert.deepEqual(
+  shapedRows.map((row) => row.linkedIssueNumber),
+  [28, 29, null],
+  "linked issue parser must accept #28 and GitHub issue URLs while ignoring nonnumeric text"
+);
+assert.doesNotMatch(capturedSql, /linked_issue_number"::numeric/, "linked issue fields must be selected as text to avoid crashing on #28 or issue URLs");
 
 let capturedFilters;
 const { html: liveHtml } = await renderPullRequestsPage(
@@ -133,6 +259,22 @@ const { html: liveHtml } = await renderPullRequestsPage(
         updatedAt: null,
         url: null,
         checkUrl: null
+      },
+      {
+        id: "pr-unsafe-url",
+        repository: "berlinguyinca/autospec-gui",
+        number: 93,
+        title: "Unsafe URL should not link",
+        status: "open",
+        checkStatus: "pending",
+        validationSummary: "waiting",
+        linkedIssueNumber: 30,
+        branch: "feat/unsafe-url",
+        mergeState: "unknown",
+        failureClass: "unknown",
+        updatedAt: null,
+        url: "javascript:alert(1)",
+        checkUrl: "data:text/html,unsafe"
       }
     ],
     captureFilters: (filters) => {
@@ -161,6 +303,9 @@ for (const expected of [
   "validation",
   "View PR",
   "View check run",
+  "Unsafe URL should not link",
+  "PR URL unavailable",
+  "Check URL unavailable",
   "Missing title",
   "No linked issue recorded",
   "No branch recorded",
