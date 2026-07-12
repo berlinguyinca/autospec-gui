@@ -75,6 +75,30 @@ export type PullRequestHealth = {
   advisoryChecks: number;
 };
 
+export type PullRequestDrilldownFilters = {
+  repository: string;
+  status: string;
+  windowHours: number;
+  failureClass: string;
+};
+
+export type PullRequestDrilldown = {
+  id: string;
+  repository: string;
+  number: number | null;
+  title: string | null;
+  status: string;
+  checkStatus: string | null;
+  validationSummary: string | null;
+  linkedIssueNumber: number | null;
+  branch: string | null;
+  mergeState: string | null;
+  failureClass: string | null;
+  updatedAt: Date | null;
+  url: string | null;
+  checkUrl: string | null;
+};
+
 export type AgentActivity = {
   phase: string;
   modelTier: string;
@@ -192,6 +216,116 @@ export async function discoverTelemetrySchema(
   }
 
   return { schemaName, tables };
+}
+
+export async function getPullRequestDrilldowns(
+  filters: PullRequestDrilldownFilters = { repository: "all", status: "all", windowHours: 24, failureClass: "all" },
+  limit = 50
+): Promise<PullRequestDrilldown[]> {
+  const config = getAutospecServerConfig();
+  return withReadOnlyTelemetryClient(async (client) => {
+    const discovered = await discoverTelemetrySchema(client, config.telemetrySchema);
+    return listPullRequestDrilldowns(client, discovered, filters, limit);
+  }, config);
+}
+
+export async function listPullRequestDrilldowns(
+  client: ReadOnlyTelemetryClient,
+  discovered: DiscoveredTelemetrySchema,
+  filters: PullRequestDrilldownFilters = { repository: "all", status: "all", windowHours: 24, failureClass: "all" },
+  limit = 50
+): Promise<PullRequestDrilldown[]> {
+  const table = findTable(discovered, PR_TABLES);
+  if (!table) return [];
+
+  const id = pickColumn(table, ["id", "pull_request_id", "pr_id", "node_id"]);
+  const repository = pickColumn(table, ["repository", "repo", "repo_name", "name_with_owner"]);
+  const number = pickColumn(table, ["number", "pr_number", "pull_request_number", "github_pr_number", "pr"]);
+  const title = pickColumn(table, ["title", "pull_request_title", "summary"]);
+  const status = pickColumn(table, ["status", "state"]);
+  const checkStatus = pickColumn(table, ["check_status", "ci_status", "checks_status", "conclusion"]);
+  const validationSummary = pickColumn(table, ["validation_summary", "validation", "check_summary", "summary", "message", "details"]);
+  const linkedIssueNumber = pickColumn(table, ["linked_issue_number", "issue_number", "issue", "github_issue_number"]);
+  const branch = pickColumn(table, ["branch", "head_branch", "source_branch", "ref"]);
+  const mergeState = pickColumn(table, ["merge_state", "mergeable_state", "merge_status"]);
+  const failureClass = pickColumn(table, ["failure_class", "failure_type", "error_class", "classification"]);
+  const updatedAt = pickColumn(table, ["updated_at", "checked_at", "created_at", "ts", "timestamp", "merged_at"]);
+  const url = pickColumn(table, ["url", "html_url", "pull_request_url", "pr_url"]);
+  const checkUrl = pickColumn(table, ["check_url", "check_run_url", "ci_url", "validation_url"]);
+
+  const params: Array<string | number> = [buildWindow(filters.windowHours).from.toISOString()];
+  const predicates = [windowPredicate(updatedAt)];
+
+  if (filters.repository !== "all" && repository) {
+    params.push(filters.repository);
+    predicates.push(`lower(${quoteIdentifier(repository)}::text) = lower($${params.length}::text)`);
+  }
+
+  if (filters.status !== "all") {
+    params.push(filters.status);
+    predicates.push(`lower(coalesce(${columnExpr(checkStatus)}::text, ${columnExpr(status)}::text, ${columnExpr(mergeState)}::text, '')) = lower($${params.length}::text)`);
+  }
+
+  if (filters.failureClass !== "all" && failureClass) {
+    params.push(filters.failureClass);
+    predicates.push(`lower(${quoteIdentifier(failureClass)}::text) = lower($${params.length}::text)`);
+  }
+
+  params.push(limit);
+
+  const rows = await client.query<{
+    id: string | null;
+    repository: string | null;
+    number: string | number | null;
+    title: string | null;
+    status: string | null;
+    checkStatus: string | null;
+    validationSummary: string | null;
+    linkedIssueNumber: string | number | null;
+    branch: string | null;
+    mergeState: string | null;
+    failureClass: string | null;
+    updatedAt: Date | string | null;
+    url: string | null;
+    checkUrl: string | null;
+  }>(
+    `select ${textExpr(id, "unknown")} as id,
+            ${textExpr(repository, "unknown")} as repository,
+            ${numberExpr(number)} as number,
+            ${nullableTextExpr(title)} as title,
+            ${textExpr(status, "unknown")} as status,
+            ${nullableTextExpr(checkStatus)} as "checkStatus",
+            ${nullableTextExpr(validationSummary)} as "validationSummary",
+            ${numberExpr(linkedIssueNumber)} as "linkedIssueNumber",
+            ${nullableTextExpr(branch)} as branch,
+            ${nullableTextExpr(mergeState)} as "mergeState",
+            ${nullableTextExpr(failureClass)} as "failureClass",
+            ${dateExpr(updatedAt)} as "updatedAt",
+            ${nullableTextExpr(url)} as url,
+            ${nullableTextExpr(checkUrl)} as "checkUrl"
+       from ${quoteIdentifier(table.name)}
+      where ${predicates.join(" and ")}
+      order by ${orderExpr(updatedAt)} desc
+      limit $${params.length}`,
+    params
+  );
+
+  return rows.rows.map((row) => ({
+    id: row.id ?? "unknown",
+    repository: row.repository ?? "unknown",
+    number: coerceNumber(row.number),
+    title: emptyToNull(row.title),
+    status: row.status ?? "unknown",
+    checkStatus: emptyToNull(row.checkStatus),
+    validationSummary: emptyToNull(row.validationSummary),
+    linkedIssueNumber: coerceNumber(row.linkedIssueNumber),
+    branch: emptyToNull(row.branch),
+    mergeState: emptyToNull(row.mergeState),
+    failureClass: emptyToNull(row.failureClass),
+    updatedAt: coerceDate(row.updatedAt),
+    url: emptyToNull(row.url),
+    checkUrl: emptyToNull(row.checkUrl)
+  }));
 }
 
 export async function getTelemetryOverview(hours = 24): Promise<TelemetryOverview> {
