@@ -104,6 +104,17 @@ export type AutonomousRunStatus = {
   observedAt: Date | null;
 };
 
+export type DiscoveryAuditCycle = {
+  id: string;
+  sourceType: string | null;
+  candidateCount: number | null;
+  filedCount: number | null;
+  dryReason: string | null;
+  safetyResult: string | null;
+  createdIssueNumbers: number[];
+  observedAt: Date | null;
+};
+
 type AutonomousRunStatusRow = {
   id: string | null;
   repository: string | null;
@@ -113,6 +124,17 @@ type AutonomousRunStatusRow = {
   phase: string | null;
   cycle: string | number | null;
   issueNumber: string | null;
+  observedAt: Date | string | null;
+};
+
+type DiscoveryAuditCycleRow = {
+  id: string | null;
+  sourceType: string | null;
+  candidateCount: string | number | null;
+  filedCount: string | number | null;
+  dryReason: string | null;
+  safetyResult: string | null;
+  createdIssues: string | number | Array<string | number> | null;
   observedAt: Date | string | null;
 };
 
@@ -148,6 +170,7 @@ const EVENT_TABLES = ["autospec_events", "events", "telemetry_events"];
 const PR_TABLES = ["pull_requests", "prs", "github_pull_requests"];
 const AGENT_TABLES = ["agent_activity", "agents", "worker_activity"];
 const ERROR_TABLES = ["errors", "error_events", "failures"];
+const DISCOVERY_AUDIT_TABLES = ["discovery_cycles", "discovery_audit", "discovery_candidates", "autonomous_discovery_cycles"];
 const HEARTBEAT_COLUMNS = ["heartbeat_at", "last_heartbeat_at", "heartbeat_ts", "last_seen_at"];
 
 export async function discoverTelemetrySchema(
@@ -189,6 +212,74 @@ export async function getTelemetryOverview(hours = 24): Promise<TelemetryOvervie
 
     return { window, runStatusCounts, recentRuns, issueThroughput, pullRequestHealth, agentActivity, errorSummary, autonomousRunStatus };
   }, config);
+}
+
+
+export async function listConfiguredDiscoveryAuditCycles(hours = 24): Promise<DiscoveryAuditCycle[]> {
+  const config = getAutospecServerConfig();
+  return withReadOnlyTelemetryClient(async (client) => {
+    const discovered = await discoverTelemetrySchema(client, config.telemetrySchema);
+    return listDiscoveryAuditCycles(client, discovered, buildWindow(hours));
+  }, config);
+}
+
+export async function listDiscoveryAuditCycles(
+  client: ReadOnlyTelemetryClient,
+  discovered: DiscoveredTelemetrySchema,
+  window: TelemetryTimeWindow = buildWindow(24),
+  limit = 25
+): Promise<DiscoveryAuditCycle[]> {
+  const table = findTable(discovered, DISCOVERY_AUDIT_TABLES);
+  if (!table) return [];
+
+  const id = pickColumn(table, ["id", "cycle_id", "run_id", "dispatch_id"]);
+  const sourceType = pickColumn(table, ["source_type", "source", "kind", "discovery_source"]);
+  const candidateCount = pickColumn(table, ["candidate_count", "candidates", "candidate_total", "discovered_count"]);
+  const filedCount = pickColumn(table, ["filed_count", "created_count", "issues_filed", "created_issue_count"]);
+  const dryReason = pickColumn(table, ["dry_reason", "dry_run_reason", "skip_reason", "no_file_reason", "reason"]);
+  const safetyResult = pickColumn(table, ["safety_result", "safety_status", "guardrail_result", "safety"]);
+  const createdIssues = pickColumn(table, ["created_issue_numbers", "created_issues", "issue_numbers", "issues", "github_issue_numbers"]);
+  const observedAt = pickColumn(table, ["observed_at", "created_at", "updated_at", "ts", "timestamp", "happened_at"]);
+
+  const rows = await client.query<DiscoveryAuditCycleRow>(
+    `select ${textExpr(id, "unknown")} as id,
+            ${nullableTextExpr(sourceType)} as "sourceType",
+            ${nullableTextExpr(candidateCount)} as "candidateCount",
+            ${nullableTextExpr(filedCount)} as "filedCount",
+            ${nullableTextExpr(dryReason)} as "dryReason",
+            ${nullableTextExpr(safetyResult)} as "safetyResult",
+            ${nullableTextExpr(createdIssues)} as "createdIssues",
+            ${dateExpr(observedAt)} as "observedAt"
+       from ${quoteIdentifier(table.name)}
+      where ${windowPredicate(observedAt)}
+      order by ${orderExpr(observedAt)} desc
+      limit $2`,
+    [window.from.toISOString(), limit]
+  );
+
+  return rows.rows.map(shapeDiscoveryAuditCycle);
+}
+
+function shapeDiscoveryAuditCycle(row: DiscoveryAuditCycleRow): DiscoveryAuditCycle {
+  return {
+    id: row.id ?? "unknown",
+    sourceType: emptyToNull(row.sourceType),
+    candidateCount: coerceOptionalCount(row.candidateCount),
+    filedCount: coerceOptionalCount(row.filedCount),
+    dryReason: emptyToNull(row.dryReason),
+    safetyResult: emptyToNull(row.safetyResult),
+    createdIssueNumbers: parseDiscoveryAuditIssueNumbers(row.createdIssues),
+    observedAt: coerceDate(row.observedAt)
+  };
+}
+
+export function formatDiscoveryAuditCount(value: number | null): string {
+  return value === null ? "Unavailable" : String(value);
+}
+
+export function formatDiscoveryAuditField(value: string | null): string {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed.replaceAll("_", " ") : "Unavailable";
 }
 
 
@@ -723,16 +814,80 @@ function emptyToNull(value: string | null): string | null {
   return trimmed ? trimmed : null;
 }
 
+export function parseDiscoveryAuditIssueNumbers(value: string | number | Array<string | number> | null): number[] {
+  if (Array.isArray(value)) return uniqueIssueNumbers(value.flatMap(issueNumberFromTrustedValue));
+
+  if (typeof value === "number") return uniqueIssueNumbers(issueNumberFromTrustedValue(value));
+
+  const trimmed = value?.trim();
+  if (!trimmed) return [];
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (Array.isArray(parsed)) {
+      return uniqueIssueNumbers(parsed.flatMap((item) => (typeof item === "number" || typeof item === "string") ? issueNumberFromTrustedValue(item) : []));
+    }
+  } catch {
+    // Fall through to strict token parsing.
+  }
+
+  const tokens = trimmed.split(/[\s,]+/).filter(Boolean);
+  if (tokens.length === 0) return [];
+
+  const issueNumbers: number[] = [];
+  for (const token of tokens) {
+    const parsed = issueNumberFromTrustedToken(token);
+    if (parsed === null) return [];
+    issueNumbers.push(parsed);
+  }
+
+  return uniqueIssueNumbers(issueNumbers);
+}
+
+function issueNumberFromTrustedValue(value: string | number): number[] {
+  const parsed = parseIssueNumber(value);
+  return parsed === null ? [] : [parsed];
+}
+
+function issueNumberFromTrustedToken(token: string): number | null {
+  return parseIssueNumber(token) ?? parseIssueNumberFromIssueUrl(token);
+}
+
+function uniqueIssueNumbers(values: number[]): number[] {
+  return Array.from(new Set(values));
+}
+
+function coerceOptionalCount(value: string | number | null): number | null {
+  if (typeof value === "number") return Number.isSafeInteger(value) && value >= 0 ? value : null;
+
+  const trimmed = value?.trim();
+  if (!trimmed || !/^\d+$/.test(trimmed)) return null;
+
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
 function parseIssueNumber(value: string | number | null): number | null {
-  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "number") return Number.isSafeInteger(value) && value > 0 ? value : null;
   const trimmed = value?.trim();
   if (!trimmed) return null;
 
-  const match = trimmed.match(/^#?(\d+)$/) ?? trimmed.match(/\/issues\/(\d+)(?:\b|$)/);
+  const match = trimmed.match(/^#?(\d+)$/);
+  if (match) return safeIssueNumber(match[1]);
+
+  return parseIssueNumberFromIssueUrl(trimmed);
+}
+
+function parseIssueNumberFromIssueUrl(value: string): number | null {
+  const match = value.match(/^https?:\/\/[^\s]+\/issues\/(\d+)(?:[?#].*)?$/) ?? value.match(/^\/issues\/(\d+)(?:[?#].*)?$/);
   if (!match) return null;
 
-  const parsed = Number(match[1]);
-  return Number.isFinite(parsed) ? parsed : null;
+  return safeIssueNumber(match[1]);
+}
+
+function safeIssueNumber(value: string): number | null {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 function emptyIssueThroughput(): IssueThroughput {
