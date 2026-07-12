@@ -85,6 +85,21 @@ const parsedIssueStatus = telemetry.shapeAutonomousRunStatus({
 }, now);
 assert.equal(parsedIssueStatus.issueNumber, 26, "issue strings with # prefixes should parse to a finite issue number");
 
+for (const issueNumber of ["/issues/26", "https://github.com/berlinguyinca/autospec-gui/issues/26"]) {
+  const status = telemetry.shapeAutonomousRunStatus({
+    id: "run-issue-url",
+    repository: "repo",
+    branch: "branch",
+    status: "waiting",
+    heartbeatAt: null,
+    phase: null,
+    cycle: null,
+    issueNumber,
+    observedAt: null
+  }, now);
+  assert.equal(status.issueNumber, 26, `${issueNumber} should parse to the linked issue number for autonomous status`);
+}
+
 for (const issueNumber of ["", "not-an-issue", "https://github.com/berlinguyinca/autospec-gui/issues/not-number"]) {
   const status = telemetry.shapeAutonomousRunStatus({
     id: "run-nonnumeric-issue",

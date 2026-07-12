@@ -873,17 +873,20 @@ function parseIssueNumber(value: string | number | null): number | null {
   if (!trimmed) return null;
 
   const match = trimmed.match(/^#?(\d+)$/);
-  if (!match) return null;
+  if (match) return safeIssueNumber(match[1]);
 
-  const parsed = Number(match[1]);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+  return parseIssueNumberFromIssueUrl(trimmed);
 }
 
 function parseIssueNumberFromIssueUrl(value: string): number | null {
   const match = value.match(/^https?:\/\/[^\s]+\/issues\/(\d+)(?:[?#].*)?$/) ?? value.match(/^\/issues\/(\d+)(?:[?#].*)?$/);
   if (!match) return null;
 
-  const parsed = Number(match[1]);
+  return safeIssueNumber(match[1]);
+}
+
+function safeIssueNumber(value: string): number | null {
+  const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
