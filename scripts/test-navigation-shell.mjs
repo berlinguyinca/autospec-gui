@@ -10,6 +10,7 @@ const expectedSections = [
   ["Overview", "/"],
   ["Runs", "/runs"],
   ["Issues", "/issues"],
+  ["Discovery Audit", "/discovery-audit"],
   ["Pull Requests", "/pull-requests"],
   ["Errors", "/errors"]
 ];
@@ -44,6 +45,22 @@ async function renderComponent(sourcePath, moduleName, props = {}) {
   const source = readFileSync(sourcePath, "utf8")
     .replace(/^import\s+["\']\.\/globals\.css["\'];\s*$/m, "")
     .replace(/^import\s+TelemetryExplorer[^;]+;\s*$/m, "")
+    .replace(/^import\s+\{\s*AutospecConfigError\s*\}\s+from\s+["']\.\.\/\.\.\/src\/server\/config["'];\s*$/m, "class AutospecConfigError extends Error {}")
+    .replace(/^import\s+\{\s*AutospecConfigError\s*\}\s+from\s+["']\.\.\/src\/server\/config["'];\s*$/m, "class AutospecConfigError extends Error {}")
+    .replace(/^import\s+\{[\s\S]*?listConfiguredDiscoveryAuditCycles[\s\S]*?\}\s+from\s+["']\.\.\/\.\.\/src\/server\/telemetry["'];\s*$/m, `async function listConfiguredDiscoveryAuditCycles() { return []; }\nfunction formatDiscoveryAuditCount(value) { return value === null ? "Unavailable" : String(value); }\nfunction formatDiscoveryAuditField(value) { return value?.trim() ? value.replaceAll("_", " ") : "Unavailable"; }`)
+    .replace(/^import\s+\{[\s\S]*?getPullRequestDrilldowns[\s\S]*?\}\s+from\s+["']\.\.\/\.\.\/src\/server\/telemetry["'];\s*$/m, "async function getPullRequestDrilldowns() { return []; }")
+    .replace(/^import\s+\{\s*getTelemetryOverview[^;]+;\s*$/m, `async function getTelemetryOverview() {
+  return {
+    window: { hours: 24, from: new Date("2026-07-10T12:00:00Z"), to: new Date("2026-07-11T12:00:00Z") },
+    runStatusCounts: [],
+    recentRuns: [],
+    issueThroughput: { created: 0, classified: 0, implemented: 0, merged: 0, failed: 0, paused: 0 },
+    pullRequestHealth: { open: 0, merged: 0, failedChecks: 0, pendingChecks: 0, advisoryChecks: 0 },
+    agentActivity: [],
+    errorSummary: [],
+    autonomousRunStatus: null
+  };
+}`)
     .replace(/<TelemetryExplorer\s+events=\{telemetryEvents\}\s+\/>/, "<section>Interactive telemetry filters placeholder</section>");
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
@@ -60,9 +77,10 @@ async function renderComponent(sourcePath, moduleName, props = {}) {
   const modulePath = join(tempDir, `${moduleName}.mjs`);
   writeFileSync(modulePath, compiled);
 
-  const mod = await import(pathToFileURL(modulePath).href);
+  const mod = await import(`${pathToFileURL(modulePath).href}?t=${Date.now()}-${Math.random()}`);
   assert.equal(typeof mod.default, "function", `${sourcePath} must default-export a component`);
-  return renderToStaticMarkup(React.createElement(mod.default, props));
+  const rendered = mod.default(props);
+  return renderToStaticMarkup(await Promise.resolve(rendered));
 }
 
 function escapeRegExp(value) {

@@ -5,6 +5,7 @@ const primaryNavigation = [
   { href: "/", label: "Overview" },
   { href: "/runs", label: "Runs" },
   { href: "/issues", label: "Issues" },
+  { href: "/discovery-audit", label: "Discovery Audit" },
   { href: "/pull-requests", label: "Pull Requests" },
   { href: "/errors", label: "Errors" }
 ];
