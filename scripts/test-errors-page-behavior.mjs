@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import React from "react";
@@ -21,31 +21,35 @@ const compiled = ts.transpileModule(source, {
 const tempDir = join(process.cwd(), ".tmp-test-errors-page-behavior");
 mkdirSync(tempDir, { recursive: true });
 const modulePath = join(tempDir, "page.mjs");
-writeFileSync(modulePath, compiled);
+try {
+  writeFileSync(modulePath, compiled);
 
-const pageModule = await import(pathToFileURL(modulePath).href);
-assert.equal(typeof pageModule.default, "function", "errors page must default-export a component");
+  const pageModule = await import(pathToFileURL(modulePath).href);
+  assert.equal(typeof pageModule.default, "function", "errors page must default-export a component");
 
-const html = renderToStaticMarkup(React.createElement(pageModule.default));
+  const html = renderToStaticMarkup(React.createElement(pageModule.default));
 
-assert.match(html, /<h1[^>]*>Errors<\/h1>/, "errors page must identify the route");
-assert.match(html, /<h2[^>]*>Grouped failures<\/h2>/, "errors page must identify the grouped failure summary");
-assert.match(
-  html,
-  /<li><strong>Validation timeout while waiting for checks<\/strong><span>3 occurrences · latest 18m ago<\/span><\/li>/,
-  "errors page must show the validation timeout group with count and recency"
-);
-assert.match(
-  html,
-  /<li><strong>Telemetry schema missing optional PR health view<\/strong><span>1 occurrences · latest 42m ago<\/span><\/li>/,
-  "errors page must show the telemetry schema group with count and recency"
-);
-assert.equal((html.match(/<li>/g) ?? []).length, 2, "errors page must render one row per grouped error");
-assert.match(html, /read-only/i, "errors page must communicate the read-only boundary");
-assert.doesNotMatch(
-  html,
-  /<button\b|<form\b|method="post"|DATABASE_URL|postgres:\/\//i,
-  "errors page must not expose recovery writes or database secrets"
-);
+  assert.match(html, /<h1[^>]*>Errors<\/h1>/, "errors page must identify the route");
+  assert.match(html, /<h2[^>]*>Grouped failures<\/h2>/, "errors page must identify the grouped failure summary");
+  assert.match(
+    html,
+    /<li><strong>Validation timeout while waiting for checks<\/strong><span>3 occurrences · latest 18m ago<\/span><\/li>/,
+    "errors page must show the validation timeout group with count and recency"
+  );
+  assert.match(
+    html,
+    /<li><strong>Telemetry schema missing optional PR health view<\/strong><span>1 occurrences · latest 42m ago<\/span><\/li>/,
+    "errors page must show the telemetry schema group with count and recency"
+  );
+  assert.equal((html.match(/<li>/g) ?? []).length, 2, "errors page must render one row per grouped error");
+  assert.match(html, /read-only/i, "errors page must communicate the read-only boundary");
+  assert.doesNotMatch(
+    html,
+    /<button\b|<form\b|method="post"|DATABASE_URL|postgres:\/\//i,
+    "errors page must not expose recovery writes or database secrets"
+  );
 
-console.log("1 passing behavior scenario: grouped errors remain visible and read-only");
+  console.log("1 passing behavior scenario: grouped errors remain visible and read-only");
+} finally {
+  rmSync(tempDir, { recursive: true, force: true });
+}
