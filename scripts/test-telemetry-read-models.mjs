@@ -75,11 +75,15 @@ for (const name of [
   "IssueThroughput",
   "PullRequestHealth",
   "AgentActivity",
-  "ErrorSummary"
+  "ErrorSummary",
+  "RunDetail",
+  "RunPhase",
+  "ValidationEvidence",
+  "RunRelatedError"
 ]) {
   assert.match(telemetrySource, new RegExp(`export\\s+type\\s+${name}\\b`), `${name} read model type must be exported`);
 }
-for (const fn of ["discoverTelemetrySchema", "getTelemetryOverview", "listRecentRuns"]) {
+for (const fn of ["discoverTelemetrySchema", "getTelemetryOverview", "listRecentRuns", "getRunDetail"]) {
   assert.match(telemetrySource, new RegExp(`export\\s+async\\s+function\\s+${fn}\\b`), `${fn} must be exported`);
 }
 assert.match(telemetrySource, /information_schema\.columns/, "telemetry adapter must discover table columns before querying raw telemetry tables");
