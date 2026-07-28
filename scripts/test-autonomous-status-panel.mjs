@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import Module from "node:module";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 
+const tempDir = join(process.cwd(), ".tmp-test-autonomous-status");
+
+try {
 console.log("unit-only: autonomous status tests use source/shape/render checks and do not mock Postgres integration behavior");
 
 function loadTsModule(path, extraRequire = {}) {
@@ -193,7 +196,6 @@ async function renderHomeWithTelemetry({ overview, configErrorMessage }) {
     fileName: pagePath
   }).outputText;
 
-  const tempDir = join(process.cwd(), ".tmp-test-autonomous-status");
   mkdirSync(tempDir, { recursive: true });
   const modulePath = join(tempDir, `page-${Math.random().toString(16).slice(2)}.cjs`);
   writeFileSync(modulePath, compiled);
@@ -239,3 +241,6 @@ assert.match(sparseHtml, /Phase\s*Unavailable/, "missing phase should render an 
 const missingConfigHtml = await renderHomeWithTelemetry({ overview, configErrorMessage: "AUTOSPEC_TELEMETRY_DATABASE_URL is required" });
 assert.match(missingConfigHtml, /Telemetry status unavailable/, "missing configuration should render non-fatal status panel state");
 assert.match(missingConfigHtml, /AUTOSPEC_TELEMETRY_DATABASE_URL is required/, "missing configuration message should be visible without crashing");
+} finally {
+  rmSync(tempDir, { recursive: true, force: true });
+}
