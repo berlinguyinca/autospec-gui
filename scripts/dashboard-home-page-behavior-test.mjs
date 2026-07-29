@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 
 const pagePath = join(process.cwd(), "app", "page.tsx");
-const tempDir = join(process.cwd(), ".tmp-dashboard-home-page-behavior-tests");
+const tempDir = join(process.cwd(), ".tmp-dashboard-home-page-behavior-test");
 
 try {
   const source = readFileSync(pagePath, "utf8");
