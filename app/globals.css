@@ -22,6 +22,12 @@ body {
   background: radial-gradient(circle at top left, #e0f2fe 0, transparent 30%), var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  /* This app renders environment variable names, connection strings and run ids — long
+     unbreakable tokens that no amount of container sizing will wrap. One of them
+     (AUTOSPEC_TELEMETRY_DATABASE_URL, in the empty state) pushed the document to 396px in a
+     390px viewport, which is a sideways scroll on every phone and a WCAG 1.4.10 reflow
+     failure at 320px. Breaking mid-token is only reached when a word cannot otherwise fit. */
+  overflow-wrap: anywhere;
 }
 
 .shell {
@@ -468,6 +474,12 @@ th {
 }
 
 .brand {
+  /* An inline link is only as tall as its text — 20px here, under the 24px minimum target
+     size in WCAG 2.5.8. inline-flex with a min-height gives it a real box to tap without
+     changing how it looks. */
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
   color: var(--foreground);
   font-size: 17px;
   font-weight: 800;
