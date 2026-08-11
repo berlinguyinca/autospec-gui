@@ -20,3 +20,4 @@ pnpm-debug.log*
 .autospec/*
 !.autospec/
 !.autospec/quality-audit-accepted.json
+.omx/
